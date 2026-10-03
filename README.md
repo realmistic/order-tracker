@@ -83,33 +83,42 @@ Implementation:
 - Integrates Anthropic SDK to trigger Claude analysis
 - API endpoints: `GET /incidents`, `GET /incidents/{id}`, `POST /alerts`
 
-### ✅ Q6: Watch the agent fix the incident - Answer: **Data-Format Drift / Integer Coercion Bug**
+### ✅ Q6: Watch the agent fix the incident - Answer: **Express Delivery Date Calculation Bug**
+
 **The Underlying Problem:**
-- New order IDs use format: `express-1002`, `standard-1001` (string with prefix)
-- Old code assumes numeric IDs: `int(order_id)`
-- When `express-1002` is passed, `int()` throws `ValueError`
-- Exception escapes handler as **HTTP 500** error
+Express delivery date calculation uses invalid day arithmetic:
 
-**Claude's Primary Diagnosis:**
-This is a classic **data-format drift** bug: a new ID scheme was introduced at write time (order creation for express orders) without updating the read path.
-
-**The Fix Claude Recommends:**
 ```python
-def get_order(order_id: str):  # Keep as str, not int
-    with connect() as db:
-        row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
-    if row is None:  # Explicit guard prevents dereference
-        raise HTTPException(404, "Order not found")
-    return order_detail(row)
+# BUGGY CODE:
+placed_at = datetime.fromisoformat(order["created_at"])
+estimated_at = placed_at.replace(day=placed_at.day + 2)  # ❌ BUG
 ```
 
+**Why it fails:**
+- If order placed on **Jan 30** → tries to set day to 32 → doesn't exist → ValueError → HTTP 500
+- If order placed on **May 30** → tries to set day to 32 → doesn't exist → ValueError → HTTP 500
+- If order placed on **Feb 28** → tries to set day to 30 → doesn't exist → ValueError → HTTP 500
+
+**The Fix:**
+```python
+from datetime import timedelta
+
+# CORRECT CODE:
+estimated_at = placed_at + timedelta(days=2)  # Properly add 2 days
+order["estimated_delivery"] = estimated_at.date().isoformat()
+```
+
+**Why this matters:**
+- Direct day field manipulation doesn't handle month/year boundaries
+- `timedelta` correctly handles all edge cases (month-end, leap years, etc.)
+
 **Complete Flow:**
-1. ✅ Grafana alert fires when 5xx errors detected
-2. ✅ Webhook sends alert to incident responder
-3. ✅ Incident responder receives alert at `/alerts`
-4. ✅ Claude analyzes the problem context
-5. ✅ Claude identifies root cause and provides fix
-6. ✅ Problem context and solution saved to disk
+1. ✅ User creates express order placed on day 30 or 31
+2. ✅ `order_detail()` tries to calculate delivery: `day=30+2=32` (invalid)
+3. ✅ Grafana alert fires with HTTP 500 error
+4. ✅ Webhook sends alert to incident responder
+5. ✅ Claude analyzes and identifies date arithmetic bug
+6. ✅ Claude provides fix: use `timedelta` instead of `replace(day=...)`
 
 ## Setup with Environment Variables
 
