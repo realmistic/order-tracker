@@ -56,10 +56,12 @@ This repository includes complete solutions for all 6 homework questions:
 - Order `standard-1002` returns HTTP **404** (Not Found)
 - Complete stack: App → OTel Collector → Prometheus → Grafana
 
-### ✅ Q4: Configure the alert
+### ✅ Q4: Configure the alert - Answer: **Firing** 🔴
 - Created Grafana alert rule for HTTP errors
 - Configured with endpoint labels and time windows
 - Alert linked to dashboard and documentation
+- Alert state transitions to **Firing** when 5xx errors are triggered
+- Webhook sends alert to incident responder for automatic analysis
 
 ### ✅ Q5: Build the incident responder
 - Created incident-response service on port 8001

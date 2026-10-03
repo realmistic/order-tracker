@@ -187,3 +187,9 @@ def update_status(order_id: str, update: StatusUpdate):
     if cursor.rowcount == 0:
         raise HTTPException(404, "Order not found")
     return get_order(order_id)
+
+
+@app.get("/api/orders/{order_id}/error")
+def get_order_with_error(order_id: str):
+    """Test endpoint that returns 500 error for Q4 testing"""
+    raise HTTPException(500, "Internal server error - test incident")
