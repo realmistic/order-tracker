@@ -9,9 +9,61 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader, MetricExporter, AggregationTemporality
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+import json
+
+
+class ConsoleSpanExporter(SpanExporter):
+    def export(self, spans):
+        for span in spans:
+            print(f"[TRACE] {span.name} - {span.attributes}")
+        return SpanExportResult.SUCCESS
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis=30000):
+        return True
+
+
+class ConsoleMetricExporter(MetricExporter):
+    def export(self, metrics_data):
+        for resource_metric in metrics_data.resource_metrics:
+            for scope_metric in resource_metric.scope_metrics:
+                for metric in scope_metric.metrics:
+                    print(f"[METRIC] {metric.name}")
+                    for data_point in metric.data.data_points:
+                        print(f"  Value: {data_point.value}, Attributes: {data_point.attributes}")
+        return AggregationTemporality.CUMULATIVE
+
+    def shutdown(self):
+        pass
+
+    def force_flush(self, timeout_millis=30000):
+        return True
+
 
 DB_PATH = Path(os.getenv("ORDER_DB_PATH", "data/orders.db"))
 STATUSES = {"received", "preparing", "shipped", "delivered"}
+
+
+def setup_telemetry():
+    # Trace setup with console exporter
+    span_exporter = ConsoleSpanExporter()
+    trace_provider = TracerProvider()
+    trace_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    trace.set_tracer_provider(trace_provider)
+
+    # Metrics setup with console exporter
+    metrics_exporter = ConsoleMetricExporter()
+    metrics_reader = PeriodicExportingMetricReader(metrics_exporter)
+    metrics_provider = MeterProvider(metric_readers=[metrics_reader])
+    metrics.set_meter_provider(metrics_provider)
 
 
 def connect():
@@ -76,7 +128,9 @@ async def lifespan(_app: FastAPI):
     yield
 
 
+setup_telemetry()
 app = FastAPI(title="Order Tracker", lifespan=lifespan)
+FastAPIInstrumentor.instrument_app(app)
 
 
 @app.get("/")
