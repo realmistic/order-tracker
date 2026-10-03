@@ -139,7 +139,7 @@ def list_incidents():
                 "id": incident_dir.name,
                 "path": str(incident_dir)
             })
-    return {"incidents": sorted(incidents, reverse=True)}
+    return {"incidents": sorted(incidents, key=lambda x: x["id"], reverse=True)}
 
 
 @app.get("/healthz")

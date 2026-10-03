@@ -63,17 +63,53 @@ This repository includes complete solutions for all 6 homework questions:
 - Alert state transitions to **Firing** when 5xx errors are triggered
 - Webhook sends alert to incident responder for automatic analysis
 
-### ✅ Q5: Build the incident responder
+### ✅ Q5: Build the incident responder - Answer: Claude's Analysis
+**What Claude Returns:**
+- Context analysis of alert severity, endpoint, and error patterns
+- **Root cause hypothesis**: Data-format drift (ID format mismatch)
+- **Ranked hypotheses**:
+  1. Integer coercion bug (`int(order_id)` fails on `express-1002`)
+  2. Route typed as integer (`<int:order_id>`)
+  3. Naive ID splitting without bounds checking
+  4. Write/read key mismatch between creation and lookup
+  5. Missing not-found guard causing dereference of `None`
+- **Triage commands**: Exact bash commands to confirm root cause
+- **Remediation code**: Ready-to-apply Python fix treating IDs as opaque strings
+
+Implementation:
 - Created incident-response service on port 8001
 - Accepts POST `/alerts` from Grafana webhooks
-- Saves incident context (alerts, analysis) to disk
-- Integrates Anthropic SDK for automatic Claude analysis
+- Saves incident context (alerts, prompt, analysis) to disk
+- Integrates Anthropic SDK to trigger Claude analysis
 - API endpoints: `GET /incidents`, `GET /incidents/{id}`, `POST /alerts`
 
-### ✅ Q6: Watch the agent fix the incident
-- Webhook connects Grafana alerts to incident responder
-- Claude analyzes incidents automatically
-- Provides root cause analysis and remediation suggestions
+### ✅ Q6: Watch the agent fix the incident - Answer: **Data-Format Drift / Integer Coercion Bug**
+**The Underlying Problem:**
+- New order IDs use format: `express-1002`, `standard-1001` (string with prefix)
+- Old code assumes numeric IDs: `int(order_id)`
+- When `express-1002` is passed, `int()` throws `ValueError`
+- Exception escapes handler as **HTTP 500** error
+
+**Claude's Primary Diagnosis:**
+This is a classic **data-format drift** bug: a new ID scheme was introduced at write time (order creation for express orders) without updating the read path.
+
+**The Fix Claude Recommends:**
+```python
+def get_order(order_id: str):  # Keep as str, not int
+    with connect() as db:
+        row = db.execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
+    if row is None:  # Explicit guard prevents dereference
+        raise HTTPException(404, "Order not found")
+    return order_detail(row)
+```
+
+**Complete Flow:**
+1. ✅ Grafana alert fires when 5xx errors detected
+2. ✅ Webhook sends alert to incident responder
+3. ✅ Incident responder receives alert at `/alerts`
+4. ✅ Claude analyzes the problem context
+5. ✅ Claude identifies root cause and provides fix
+6. ✅ Problem context and solution saved to disk
 
 ## Setup with Environment Variables
 
