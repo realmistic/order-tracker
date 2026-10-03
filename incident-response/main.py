@@ -89,7 +89,10 @@ Context: This is an Order Tracker application that manages order creation and st
                     {"role": "user", "content": prompt}
                 ]
             )
-            agent_response = message.content[0].text
+            # Extract text from response, handling both TextBlock and ThinkingBlock
+            for block in message.content:
+                if hasattr(block, 'text'):
+                    agent_response += block.text + "\n"
 
     except Exception as e:
         agent_response = f"Error invoking agent: {str(e)}"
